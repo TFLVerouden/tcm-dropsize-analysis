@@ -27,10 +27,17 @@ import h5py
 
 import matplotlib.pyplot as plt
 
+from natsort import natsorted
+
 from tcm_utils.plot_style import (
     add_broken_xaxis_marks,
     append_unit_to_last_ticklabel,
+    plot_binned_area,
+    raise_axis_frame,
+    set_grid,
+    set_log_axes,
     use_tcm_poster_style,
+    set_ticks_every
 )
 ###############################################################################
 # Small utilities (kept tiny on purpose)
@@ -114,11 +121,13 @@ out_root = repo_root / "new_analysis" / "data"
 out_abe = out_root / "Abe"
 out_morgan = out_root / "Morgan"
 out_plots = out_root / "plots"
+out_plots_all = out_plots / "all_distributions"
 out_logs = out_root / "logs"
 
 out_abe.mkdir(parents=True, exist_ok=True)
 out_morgan.mkdir(parents=True, exist_ok=True)
 out_plots.mkdir(parents=True, exist_ok=True)
+out_plots_all.mkdir(parents=True, exist_ok=True)
 out_logs.mkdir(parents=True, exist_ok=True)
 
 # Input folders (hard-coded because this is one-off work)
@@ -137,7 +146,7 @@ morgan_root = repo_root / "Morgan_data" / "PDA"
 # We take the Spraytec bin edges as the shared axis between the two datasets.
 first_abe_file: Path | None = None
 for folder in abe_dirs.values():
-    files = sorted(folder.glob("average_*.txt"))
+    files = natsorted(folder.glob("average_*.txt"), key=lambda p: p.name)
     if files:
         first_abe_file = files[0]
         break
@@ -199,13 +208,17 @@ for _, row in metadata.iterrows():
             abe_key = "1percent"
 
         folder = abe_dirs[abe_key]
-        files = sorted(folder.glob("average_*.txt"))
+        files = natsorted(folder.glob("average_*.txt"), key=lambda p: p.name)
 
-        # Overlay plot: number-% per measurement
-        plt.figure(figsize=(6, 4))
+        # Overlay plot: one distribution per measurement (area plots).
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+        set_grid(ax, mode="horizontal", on=True)
+        set_log_axes(ax, x=True)
 
-        for f in files:
-            # Measurement index is purely for labeling/filename sorting.
+        color_cycle = plt.rcParams.get(
+            "axes.prop_cycle").by_key().get("color", ["C0"])
+
+        for i, f in enumerate(files):
             m = re.search(r"_(\d+)(?:_.*)?\.txt$", f.name)
             measurement_index = int(m.group(1)) if m else None
 
@@ -255,29 +268,94 @@ for _, row in metadata.iterrows():
                 meta=meta_out,
             )
 
-            plt.step(
-                bin_edges_um[:-1],
+            color = color_cycle[i % len(color_cycle)]
+            stairs = plot_binned_area(
+                ax,
+                bin_edges_um,
                 n_percent,
-                where="post",
-                alpha=0.8,
-                linewidth=1.0,
-                label=(
-                    f"m{measurement_index}" if measurement_index is not None else None),
+                x_mode="edges",
+                color=color,
+                alpha=0.15,
+                outline=True,
+                outline_linewidth=2,
+                outline_color=color,
+                white_underlay=True,
+                zorder_fill=6,
+                zorder_outline=7,
+            )
+            if stairs is not None:
+                label = f"m{measurement_index}" if measurement_index is not None else f.name
+                stairs.set_label(label)
+
+        ax.set_xlabel(r"Diameter (μm)")
+        ax.set_ylabel("Number distribution (%)")
+        ax.set_title(
+            f"Series {series_id} (Abe) {row['liquid']} {row['concentration_v_perc']}%")
+        ax.legend(frameon=False)
+        raise_axis_frame(ax)
+        fig.tight_layout()
+        fig.savefig(
+            out_plots_all / f"series{series_id:02d}_Abe_overlay.pdf", format="pdf", bbox_inches="tight")
+        plt.close(fig)
+
+        # Special series00 example plot (extra output; does not replace normal overlay).
+        if series_id == 0:
+            fig_ex, ax_ex = plt.subplots(1, 1, figsize=(4, 3.5))
+            set_grid(ax_ex, mode="none", on=False)
+            set_log_axes(ax_ex, x=True)
+
+            for f in files:
+                df = pd.read_csv(f, delimiter=",",
+                                 encoding="latin1").replace("-", 0)
+                row0 = df.iloc[0]
+                v_percent = pd.to_numeric(
+                    row0[spraytec_volume_cols], errors="coerce").to_numpy(dtype=float)
+                v_percent = np.nan_to_num(
+                    v_percent, nan=0.0, posinf=0.0, neginf=0.0)
+                v_percent = v_percent / v_percent.sum() * 100.0
+                n_raw = v_percent / (bin_centers_um ** 3)
+                n_percent = n_raw / n_raw.sum() * 100.0
+                plot_binned_area(
+                    ax_ex,
+                    bin_edges_um,
+                    n_percent,
+                    x_mode="edges",
+                    color="C0",
+                    alpha=0.3,
+                    outline=False,
+                    white_underlay=True,
+                    zorder_fill=6,
+                    zorder_outline=7,
+                )
+
+            ax_ex.set_xlim(0.1, 1000)
+            ax_ex.set_ylim(0, 20)
+            ax_ex.set_xlabel(r"Diameter (μm)")
+            ax_ex.set_ylabel("Nr. distr. (%)")
+
+            set_ticks_every(ax_ex, axis="y", step=5)
+
+            raise_axis_frame(ax_ex)
+            fig_ex.tight_layout()
+            fig_ex.savefig(
+                out_plots /
+                f"example_distribution_series{series_id:02d}_Abe_{_slug(row['liquid'])}_c{row['concentration_v_perc']}_air{row['airflow_m_s']}.pdf",
+                format="pdf",
+                bbox_inches="tight",
             )
 
-        plt.xscale("log")
-        plt.xlabel(r"Diameter (μm)")
-        plt.ylabel("Number distribution (%)")
-        plt.grid(which="major")
-        plt.title(
-            f"Series {series_id} (Abe) {row['liquid']} {row['concentration_v_perc']}%")
-        plt.legend(title="Measurement", fontsize=8,
-                   title_fontsize=9, frameon=False)
-        plt.tight_layout()
-        plt.savefig(
-            out_plots / f"series{series_id:02d}_Abe_overlay.pdf", format="pdf",
-            bbox_inches="tight")
-        plt.close()
+            # Change the xlims to zoomed in view and save again with different name
+            ax_ex.set_xlim(4, 200)
+            fig_ex.tight_layout()
+            fig_ex.savefig(
+                out_plots /
+                f"example_distribution_series{series_id:02d}_Abe_{_slug(row['liquid'])}_c{row['concentration_v_perc']}_air{row['airflow_m_s']}_zoomed.pdf",
+                format="pdf",
+                bbox_inches="tight",
+            )
+
+            plt.close(fig_ex)
+
         continue
 
     # -----------------
@@ -301,11 +379,16 @@ for _, row in metadata.iterrows():
             case = "050B_1wt"
 
         folder = morgan_root / case
-        files = sorted(folder.glob("*.h5"))
+        files = natsorted(folder.glob("*.h5"), key=lambda p: p.name)
 
-        plt.figure(figsize=(6, 4))
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+        set_grid(ax, mode="horizontal", on=True)
+        set_log_axes(ax, x=True)
 
-        for f in files:
+        color_cycle = plt.rcParams.get(
+            "axes.prop_cycle").by_key().get("color", ["C0"])
+
+        for i, f in enumerate(files):
             m = re.search(r"_e(\d+)\.[\d]+\.h5$", f.name)
             measurement_index = int(m.group(1)) if m else None
 
@@ -357,29 +440,40 @@ for _, row in metadata.iterrows():
                 meta=meta_out,
             )
 
-            plt.step(
-                bin_edges_um[:-1],
-                n_percent,
-                where="post",
-                alpha=0.8,
-                linewidth=1.0,
-                label=(
-                    f"m{measurement_index}" if measurement_index is not None else None),
-            )
+            color = color_cycle[i % len(color_cycle)]
 
-        plt.xscale("log")
-        plt.xlabel(r"Diameter (μm)")
-        plt.ylabel("Number distribution (%)")
-        plt.grid(which="major")
-        plt.title(
+            stairs = plot_binned_area(
+                ax,
+                bin_edges_um,
+                n_percent,
+                x_mode="edges",
+                color=color,
+                alpha=0.15,
+                outline=True,
+                outline_linewidth=2,
+                outline_color=color,
+                white_underlay=True,
+                zorder_fill=6,
+                zorder_outline=7,
+            )
+            if stairs is not None:
+                label = f"m{measurement_index}" if measurement_index is not None else f.name
+                stairs.set_label(label)
+
+        ax.set_xlim(max(0.1, float(bin_edges_um[0])), float(bin_edges_um[-1]))
+        ax.set_xlabel(r"Diameter (μm)")
+        ax.set_ylabel("Number distribution (%)")
+        ax.set_title(
             f"Series {series_id} (Morgan) {row['liquid']} {row['concentration_v_perc']}%")
-        plt.legend(title="Measurement", fontsize=8,
-                   title_fontsize=9, frameon=False)
-        plt.tight_layout()
-        plt.savefig(
-            out_plots / f"series{series_id:02d}_Morgan_overlay.pdf",
-            format="pdf", bbox_inches="tight")
-        plt.close()
+        ax.legend(frameon=False)
+        raise_axis_frame(ax)
+        fig.tight_layout()
+        fig.savefig(
+            out_plots_all / f"series{series_id:02d}_Morgan_overlay.pdf",
+            format="pdf",
+            bbox_inches="tight",
+        )
+        plt.close(fig)
         continue
 
     raise ValueError(f"Unknown dataset in metadata.csv: {dataset}")
