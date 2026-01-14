@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, cast
 import json
 
 import numpy as np
@@ -21,6 +21,52 @@ import pandas as pd
 import h5py
 
 import matplotlib.pyplot as plt
+
+
+def add_broken_xaxis_marks(
+    fig: Any,
+    ax_left: Any,
+    ax_right: Any,
+    *,
+    size: float = 0.008,
+    linewidth: float | None = None,
+    color: str = "k",
+) -> None:
+    """Draw diagonal break marks between two horizontally adjacent axes.
+
+    Important: Call this *after* final layout (tight_layout/subplots_adjust),
+    otherwise the axes positions move and the marks end up offset.
+    """
+
+    from matplotlib.lines import Line2D
+
+    if linewidth is None:
+        linewidth = float(plt.rcParams.get("axes.linewidth", 1.0))
+
+    b0 = ax_left.get_position()
+    b1 = ax_right.get_position()
+
+    x_left_edge = float(b0.x1)
+    x_right_edge = float(b1.x0)
+    y_lo = float(b0.y0)
+    y_hi = float(b0.y1)
+
+    def _diag(x: float, y: float) -> tuple[list[float], list[float]]:
+        return [x - size, x + size], [y - size, y + size]
+
+    for x in (x_left_edge, x_right_edge):
+        for y in (y_lo, y_hi):
+            xs, ys = _diag(x, y)
+            fig.add_artist(
+                Line2D(
+                    xs,
+                    ys,
+                    transform=fig.transFigure,
+                    color=color,
+                    linewidth=linewidth,
+                    clip_on=False,
+                )
+            )
 
 
 @dataclass
@@ -220,9 +266,14 @@ def _binned_from_samples(
 def load_morgan_h5(file_path: Path, *, bin_edges_um: np.ndarray) -> BinnedDistribution:
     with h5py.File(file_path, "r") as f:
         # Based on Morgan_data/Morgantonpz.py
-        d = f["/BSA/Diameter"][:]
-        t = f.get("/BSA/Arrival_Time")
-        t = None if t is None else t[:]
+        dset = cast(h5py.Dataset, f["/BSA/Diameter"])
+        d = np.asarray(dset[()], dtype=float)
+
+        t_obj = f.get("/BSA/Arrival_Time")
+        if isinstance(t_obj, h5py.Dataset):
+            t = np.asarray(t_obj[()], dtype=float)
+        else:
+            t = None
 
     meta = {
         "source": "morgan",
@@ -253,7 +304,8 @@ def load_morgan_folder(folder: Path, *, bin_edges_um: np.ndarray, case_name: str
         file_dists.append(dist)
 
         with h5py.File(file_path, "r") as f:
-            all_d.append(np.asarray(f["/BSA/Diameter"][:], dtype=float))
+            dset = cast(h5py.Dataset, f["/BSA/Diameter"])
+            all_d.append(np.asarray(dset[()], dtype=float))
 
     if all_d:
         d_concat = np.concatenate(all_d)
@@ -321,9 +373,9 @@ def _save_distribution_npz(out_path: Path, dist: BinnedDistribution, meta: dict[
 
 def _plot_overlay_pdf(out_path: Path, dists: list[BinnedDistribution], title: str) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    from tcm_utils.cvd_check import set_cvd_friendly_colors
+    from tcm_utils.plot_style import use_tcm_poster_style
 
-    set_cvd_friendly_colors()
+    use_tcm_poster_style()
 
     plt.figure(figsize=(6, 4))
     for dist in dists:
@@ -335,7 +387,7 @@ def _plot_overlay_pdf(out_path: Path, dists: list[BinnedDistribution], title: st
     plt.xscale("log")
     plt.xlabel(r"Diameter ($\mathrm{\mu}$m)")
     plt.ylabel("Number distribution (%)")
-    plt.grid(which="both", linestyle="--", linewidth=0.5)
+    plt.grid(which="major")
     plt.title(title)
     plt.legend(title="Measurement", fontsize=8,
                title_fontsize=9, frameon=False)
@@ -635,6 +687,9 @@ def _plot_mode_vs_x(
     loglog: bool,
 ) -> None:
     """Helper to plot mean±std mode vs a chosen x variable."""
+    from matplotlib.ticker import FuncFormatter, NullFormatter
+    from tcm_utils.plot_style import append_unit_to_last_ticklabel, use_tcm_poster_style
+
     for skip in (False, True):
         df = _series_mode_stats(
             data_root=data_root,
@@ -642,6 +697,8 @@ def _plot_mode_vs_x(
             skip_peaky=skip,
             peaky_threshold_percent=peaky_threshold_percent,
         )
+
+        use_tcm_poster_style()
 
         title = f"Mode vs {x_label}"
         title += (
@@ -653,28 +710,31 @@ def _plot_mode_vs_x(
         out_path = out_dir / f"mode_vs_{x_col}{ll}_{suffix}.pdf"
 
         if not loglog:
-            plt.figure(figsize=(6, 4))
+            plt.figure(figsize=(6, 4.6))
             for dataset, marker in (("Abe", "o"), ("Morgan", "s")):
                 sub = df[df["dataset"].str.lower() == dataset.lower()].copy()
                 sub = sub[np.isfinite(sub["mode_mean_um"])].sort_values(x_col)
                 if sub.empty:
                     continue
+                base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
+                base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
+                lw = 0.7 * base_lw
+                ms = 0.85 * base_ms
                 plt.errorbar(
                     sub[x_col],
                     sub["mode_mean_um"],
                     yerr=sub["mode_std_um"],
                     fmt=marker,
                     capsize=3,
-                    linewidth=1,
-                    markersize=5,
-                    label=dataset,
+                    capthick=lw,
+                    elinewidth=lw,
+                    linewidth=lw,
+                    markersize=ms,
                 )
 
             plt.xlabel(x_label)
             plt.ylabel(r"Mode diameter ($\mathrm{\mu}$m)")
-            plt.grid(which="both", linestyle="--", linewidth=0.5)
-            plt.title(title)
-            plt.legend(frameon=False)
+            plt.grid(which="major")
             plt.tight_layout()
             plt.savefig(out_path, format="pdf")
             plt.close()
@@ -686,8 +746,9 @@ def _plot_mode_vs_x(
             1,
             2,
             sharey=True,
-            figsize=(6.5, 4),
-            gridspec_kw={"width_ratios": [1, 4]},
+            # Narrower overall; make the x=0 panel much thinner.
+            figsize=(5.4, 4.8),
+            gridspec_kw={"width_ratios": [0.35, 4.65]},
         )
 
         # Determine positive range for the log axis.
@@ -707,66 +768,110 @@ def _plot_mode_vs_x(
             sub0 = sub[sub[x_col] <= 0]
             sub1 = sub[sub[x_col] > 0]
 
+            base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
+            base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
+            lw = 0.7 * base_lw
+            ms = 0.85 * base_ms
+
             label = dataset
             if not sub1.empty:
+                x1_vals = sub1[x_col]
+                if x_col == "relaxation_s":
+                    x1_vals = x1_vals * 1000.0  # seconds -> ms
                 ax1.errorbar(
-                    sub1[x_col],
+                    x1_vals,
                     sub1["mode_mean_um"],
                     yerr=sub1["mode_std_um"],
                     fmt=marker,
                     capsize=3,
-                    linewidth=1,
-                    markersize=5,
-                    label=label,
+                    capthick=lw,
+                    elinewidth=lw,
+                    linewidth=lw,
+                    markersize=ms,
                 )
-                label = None  # only label once
 
             if not sub0.empty:
+                x0_vals = sub0[x_col]
+                if x_col == "relaxation_s":
+                    x0_vals = x0_vals * 1000.0  # seconds -> ms
                 ax0.errorbar(
-                    sub0[x_col],
+                    x0_vals,
                     sub0["mode_mean_um"],
                     yerr=sub0["mode_std_um"],
                     fmt=marker,
                     capsize=3,
-                    linewidth=1,
-                    markersize=5,
-                    label=label,
+                    capthick=lw,
+                    elinewidth=lw,
+                    linewidth=lw,
+                    markersize=ms,
                 )
 
         ax1.set_xscale("log")
         ax1.set_yscale("log")
         ax0.set_yscale("log")
 
-        # Left axis: zoom around 0 to make the point(s) visible.
-        ax0.set_xlim(-0.5, 0.5)
-        # Right axis: normal log span.
-        ax1.set_xlim(min_pos * 0.9, max_pos * 1.1)
+        # Left axis: show only the 0 tick.
+        ax0.set_xticks([0.0])
+        ax0.set_xticklabels(["0"])
+        ax0.minorticks_off()
 
-        ax0.grid(which="both", linestyle="--", linewidth=0.5)
-        ax1.grid(which="both", linestyle="--", linewidth=0.5)
+        # Axis limits
+        if x_col == "relaxation_s":
+            # Display relaxation time in milliseconds on the x-axis (right panel).
+            # Range: 0.2 ms .. 80 ms
+            ax1.set_xlim(0.2, 80.0)
+            ax1.set_xticks([0.2, 1.0, 10.0])
+            ax1.xaxis.set_major_formatter(
+                FuncFormatter(lambda v, pos: f"{v:g}"))
+            ax1.xaxis.set_minor_formatter(NullFormatter())
+            append_unit_to_last_ticklabel(
+                ax1, axis="x", unit="ms", fmt="{x:g}")
+
+            # Keep the left panel focused tightly around 0 ms.
+            ax0.set_xlim(-0.02, 0.02)
+            x_label_used = "Relaxation time"
+        else:
+            # Left axis: zoom around 0 to make the point(s) visible.
+            left_halfwidth = min(0.5, max(min_pos * 0.2, 1e-12))
+            ax0.set_xlim(-left_halfwidth, left_halfwidth)
+            # Right axis: normal log span.
+            ax1.set_xlim(min_pos * 0.9, max_pos * 1.1)
+            x_label_used = x_label
+
+            ax1.xaxis.set_major_formatter(
+                FuncFormatter(lambda v, pos: f"{v:g}"))
+            ax1.xaxis.set_minor_formatter(NullFormatter())
+
+        # Avoid scientific notation for y ticks.
+        ax0.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
+
+        ax0.grid(which="major")
+        ax1.grid(which="major")
+        grid_lw = float(plt.rcParams.get("grid.linewidth", 1.0))
+        for gl in ax0.get_xgridlines() + ax0.get_ygridlines():
+            gl.set_linewidth(grid_lw)
+        for gl in ax1.get_xgridlines() + ax1.get_ygridlines():
+            gl.set_linewidth(grid_lw)
 
         # Cosmetic: hide the touching spines.
         ax0.spines["right"].set_visible(False)
         ax1.spines["left"].set_visible(False)
-        ax1.yaxis.tick_right()
-        ax1.tick_params(labelright=False)
         ax0.yaxis.tick_left()
 
-        # Diagonal break marks.
-        d = 0.015
-        kwargs = dict(transform=ax0.transAxes, color="k",
-                      clip_on=False, linewidth=1)
-        ax0.plot((1 - d, 1 + d), (-d, +d), **kwargs)
-        ax0.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
-        kwargs.update(transform=ax1.transAxes)
-        ax1.plot((-d, +d), (-d, +d), **kwargs)
-        ax1.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+        # No y ticks on the right subplot.
+        ax1.tick_params(axis="y", which="both", left=False, right=False,
+                        labelleft=False, labelright=False)
 
-        fig.suptitle(title + " (broken x-axis)")
-        fig.supxlabel(x_label)
+        fig.supxlabel(x_label_used)
         ax0.set_ylabel(r"Mode diameter ($\mathrm{\mu}$m)")
-        ax1.legend(frameon=False)
+
         fig.tight_layout()
+        # Move the two halves further apart.
+        fig.subplots_adjust(wspace=0.22)
+
+        # Diagonal break marks: draw after layout so they stay aligned.
+        add_broken_xaxis_marks(fig, ax0, ax1, size=0.008)
         fig.savefig(out_path, format="pdf")
         plt.close(fig)
 
