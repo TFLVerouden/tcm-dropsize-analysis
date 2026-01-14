@@ -1,4 +1,4 @@
-series,dataset,npz,measurement_index,source_file,source_filename,max_bin_percent,mode_um,threshold_percent
-2,Abe,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Abe/series02_Abe_PEO2M_c1.0_air50_m009.npz,9,/Users/tommieverouden/Developer/tcm-dropsize-analysis/spraytec/Averages/Unweighted/1percent/average_PEO_1percent_1dot5ml_1dot5bar_80ms_9.txt,average_PEO_1percent_1dot5ml_1dot5bar_80ms_9.txt,81.99799123145837,92.88499999999999,40.0
-4,Abe,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Abe/series04_Abe_Water_c0.0_air50_m005.npz,5,/Users/tommieverouden/Developer/tcm-dropsize-analysis/spraytec/Averages/Unweighted/water/average_water_1ml_1dot5bar_80ms_5.txt,average_water_1ml_1dot5bar_80ms_5.txt,99.8669776030423,1.472,40.0
-9,Morgan,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Morgan/series09_Morgan_PEO600k_c1.0_air44_m001.npz,1,/Users/tommieverouden/Developer/tcm-dropsize-analysis/Morgan_data/PDA/050B_1wt/050B_1wt_PEO_600k_h1_e1.000001.h5,050B_1wt_PEO_600k_h1_e1.000001.h5,50.0,6.833,40.0
+series,dataset,npz,measurement_index,source_filename,max_bin_percent,mode_um,threshold_percent
+2,Abe,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Abe/series02_Abe_PEO2M_c1.0_air50_m009.npz,9,average_PEO_1percent_1dot5ml_1dot5bar_80ms_9.txt,81.99799123145837,92.88499999999999,40.0
+4,Abe,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Abe/series04_Abe_Water_c0.0_air50_m005.npz,5,average_water_1ml_1dot5bar_80ms_5.txt,99.8669776030423,1.472,40.0
+9,Morgan,/Users/tommieverouden/Developer/tcm-dropsize-analysis/new_analysis/data/Morgan/series09_Morgan_PEO600k_c1.0_air44_m001.npz,1,050B_1wt_PEO_600k_h1_e1.000001.h5,50.0,6.833,40.0
