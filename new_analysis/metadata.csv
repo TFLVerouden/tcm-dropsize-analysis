@@ -1,0 +1,12 @@
+﻿series,dataset,liquid,concentration_v_perc,airflow_m_s,relaxation_s,Deborah
+0,Abe,PEO2M,0.03,50,5.10E-03,25.5
+1,Abe,PEO2M,0.25,50,1.90E-02,95
+2,Abe,PEO2M,1,50,5.60E-02,280
+3,Abe,PEO600k,0.2,50,6.20E-04,3.1
+4,Abe,Water,0,50,0.00E+00,0
+5,Morgan,PEO600k,0.05,44,2.60E-04,1.144
+6,Morgan,PEO600k,0.1,44,4.10E-04,1.804
+7,Morgan,PEO600k,0.2,44,6.20E-04,2.728
+8,Morgan,PEO600k,0.5,44,1.36E-03,5.984
+9,Morgan,PEO600k,1,44,2.58E-03,11.352
+10,Morgan,Water,0,44,0.00E+00,0
