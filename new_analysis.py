@@ -173,6 +173,60 @@ metadata = pd.read_csv(metadata_csv)
 #   - n_pdf and v_pdf (1/µm)
 #   - meta_json with the series metadata and the source filename
 
+
+def _new_overlay_axes(*, figsize: tuple[float, float] = (6, 4)) -> tuple[Any, Any]:
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    set_grid(ax, mode="horizontal", on=True)
+    set_log_axes(ax, x=True)
+    return fig, ax
+
+
+def _plot_overlay_distribution(ax: Any, *, n_percent: np.ndarray, color: str, label: str) -> None:
+    stairs = plot_binned_area(
+        ax,
+        bin_edges_um,
+        n_percent,
+        x_mode="edges",
+        color=color,
+        alpha=0.15,
+        outline=True,
+        outline_linewidth=2,
+        outline_color=color,
+        white_underlay=True,
+        zorder_fill=6,
+        zorder_outline=7,
+    )
+    if stairs is not None:
+        stairs.set_label(label)
+
+
+def _finalize_overlay(fig: Any, ax: Any, *, title: str, out_path: Path) -> None:
+    ax.set_xlim(max(0.1, float(bin_edges_um[0])), float(bin_edges_um[-1]))
+    ax.set_xlabel(r"Diameter (μm)")
+    ax.set_ylabel("Number distribution (%)")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    raise_axis_frame(ax)
+    fig.tight_layout()
+    fig.savefig(out_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def _spraytec_row_to_distributions(row0: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    v_percent = pd.to_numeric(
+        row0[spraytec_volume_cols], errors="coerce").to_numpy(dtype=float)
+    v_percent = np.nan_to_num(v_percent, nan=0.0, posinf=0.0, neginf=0.0)
+    v_percent = v_percent / v_percent.sum() * 100.0
+
+    # Convert volume-% to number-% with d^3 weighting.
+    n_raw = v_percent / (bin_centers_um ** 3)
+    n_percent = n_raw / n_raw.sum() * 100.0
+
+    v_pdf = (v_percent / 100.0) / bin_widths_um
+    n_pdf = (n_percent / 100.0) / bin_widths_um
+    return v_percent, n_percent, v_pdf, n_pdf
+
+
 use_tcm_poster_style()
 
 for _, row in metadata.iterrows():
@@ -211,12 +265,13 @@ for _, row in metadata.iterrows():
         files = natsorted(folder.glob("average_*.txt"), key=lambda p: p.name)
 
         # Overlay plot: one distribution per measurement (area plots).
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-        set_grid(ax, mode="horizontal", on=True)
-        set_log_axes(ax, x=True)
+        fig, ax = _new_overlay_axes(figsize=(6, 4))
 
-        color_cycle = plt.rcParams.get(
-            "axes.prop_cycle").by_key().get("color", ["C0"])
+        color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [
+            "C0"])
+
+        # Keep distributions in memory for the series00 example plot.
+        example_series0_n_percents: list[np.ndarray] = []
 
         for i, f in enumerate(files):
             m = re.search(r"_(\d+)(?:_.*)?\.txt$", f.name)
@@ -226,18 +281,8 @@ for _, row in metadata.iterrows():
                              encoding="latin1").replace("-", 0)
             row0 = df.iloc[0]
 
-            v_percent = pd.to_numeric(
-                row0[spraytec_volume_cols], errors="coerce").to_numpy(dtype=float)
-            v_percent = np.nan_to_num(
-                v_percent, nan=0.0, posinf=0.0, neginf=0.0)
-            v_percent = v_percent / v_percent.sum() * 100.0
-
-            # Convert volume-% to number-% with d^3 weighting.
-            n_raw = v_percent / (bin_centers_um ** 3)
-            n_percent = n_raw / n_raw.sum() * 100.0
-
-            v_pdf = (v_percent / 100.0) / bin_widths_um
-            n_pdf = (n_percent / 100.0) / bin_widths_um
+            v_percent, n_percent, v_pdf, n_pdf = _spraytec_row_to_distributions(
+                row0)
 
             meta_out = {
                 **common_meta,
@@ -268,35 +313,20 @@ for _, row in metadata.iterrows():
                 meta=meta_out,
             )
 
-            color = color_cycle[i % len(color_cycle)]
-            stairs = plot_binned_area(
-                ax,
-                bin_edges_um,
-                n_percent,
-                x_mode="edges",
-                color=color,
-                alpha=0.15,
-                outline=True,
-                outline_linewidth=2,
-                outline_color=color,
-                white_underlay=True,
-                zorder_fill=6,
-                zorder_outline=7,
-            )
-            if stairs is not None:
-                label = f"m{measurement_index}" if measurement_index is not None else f.name
-                stairs.set_label(label)
+            if series_id == 0:
+                example_series0_n_percents.append(n_percent)
 
-        ax.set_xlabel(r"Diameter (μm)")
-        ax.set_ylabel("Number distribution (%)")
-        ax.set_title(
-            f"Series {series_id} (Abe) {row['liquid']} {row['concentration_v_perc']}%")
-        ax.legend(frameon=False)
-        raise_axis_frame(ax)
-        fig.tight_layout()
-        fig.savefig(
-            out_plots_all / f"series{series_id:02d}_Abe_overlay.pdf", format="pdf", bbox_inches="tight")
-        plt.close(fig)
+            color = color_cycle[i % len(color_cycle)]
+            label = f"m{measurement_index}" if measurement_index is not None else f.name
+            _plot_overlay_distribution(
+                ax, n_percent=n_percent, color=color, label=label)
+
+        _finalize_overlay(
+            fig,
+            ax,
+            title=f"Series {series_id} (Abe) {row['liquid']} {row['concentration_v_perc']}%",
+            out_path=out_plots_all / f"series{series_id:02d}_Abe_overlay.pdf",
+        )
 
         # Special series00 example plot (extra output; does not replace normal overlay).
         if series_id == 0:
@@ -304,17 +334,7 @@ for _, row in metadata.iterrows():
             set_grid(ax_ex, mode="none", on=False)
             set_log_axes(ax_ex, x=True)
 
-            for f in files:
-                df = pd.read_csv(f, delimiter=",",
-                                 encoding="latin1").replace("-", 0)
-                row0 = df.iloc[0]
-                v_percent = pd.to_numeric(
-                    row0[spraytec_volume_cols], errors="coerce").to_numpy(dtype=float)
-                v_percent = np.nan_to_num(
-                    v_percent, nan=0.0, posinf=0.0, neginf=0.0)
-                v_percent = v_percent / v_percent.sum() * 100.0
-                n_raw = v_percent / (bin_centers_um ** 3)
-                n_percent = n_raw / n_raw.sum() * 100.0
+            for n_percent in example_series0_n_percents:
                 plot_binned_area(
                     ax_ex,
                     bin_edges_um,
@@ -381,12 +401,10 @@ for _, row in metadata.iterrows():
         folder = morgan_root / case
         files = natsorted(folder.glob("*.h5"), key=lambda p: p.name)
 
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-        set_grid(ax, mode="horizontal", on=True)
-        set_log_axes(ax, x=True)
+        fig, ax = _new_overlay_axes(figsize=(6, 4))
 
-        color_cycle = plt.rcParams.get(
-            "axes.prop_cycle").by_key().get("color", ["C0"])
+        color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [
+            "C0"])
 
         for i, f in enumerate(files):
             m = re.search(r"_e(\d+)\.[\d]+\.h5$", f.name)
@@ -441,39 +459,17 @@ for _, row in metadata.iterrows():
             )
 
             color = color_cycle[i % len(color_cycle)]
+            label = f"m{measurement_index}" if measurement_index is not None else f.name
+            _plot_overlay_distribution(
+                ax, n_percent=n_percent, color=color, label=label)
 
-            stairs = plot_binned_area(
-                ax,
-                bin_edges_um,
-                n_percent,
-                x_mode="edges",
-                color=color,
-                alpha=0.15,
-                outline=True,
-                outline_linewidth=2,
-                outline_color=color,
-                white_underlay=True,
-                zorder_fill=6,
-                zorder_outline=7,
-            )
-            if stairs is not None:
-                label = f"m{measurement_index}" if measurement_index is not None else f.name
-                stairs.set_label(label)
-
-        ax.set_xlim(max(0.1, float(bin_edges_um[0])), float(bin_edges_um[-1]))
-        ax.set_xlabel(r"Diameter (μm)")
-        ax.set_ylabel("Number distribution (%)")
-        ax.set_title(
-            f"Series {series_id} (Morgan) {row['liquid']} {row['concentration_v_perc']}%")
-        ax.legend(frameon=False)
-        raise_axis_frame(ax)
-        fig.tight_layout()
-        fig.savefig(
-            out_plots_all / f"series{series_id:02d}_Morgan_overlay.pdf",
-            format="pdf",
-            bbox_inches="tight",
+        _finalize_overlay(
+            fig,
+            ax,
+            title=f"Series {series_id} (Morgan) {row['liquid']} {row['concentration_v_perc']}%",
+            out_path=out_plots_all /
+            f"series{series_id:02d}_Morgan_overlay.pdf",
         )
-        plt.close(fig)
         continue
 
     raise ValueError(f"Unknown dataset in metadata.csv: {dataset}")
@@ -573,14 +569,34 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
     """Plot mode mean±std vs x, for Abe and Morgan, skip-off + skip-on."""
     from matplotlib.ticker import FuncFormatter, NullFormatter, NullLocator
 
+    # Consistent (smaller) markers/lines for errorbars.
+    base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
+    base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
+    eb_lw = 0.7 * base_lw
+    eb_ms = 0.85 * base_ms
+
+    def _plot_ds(ax: Any, sub: pd.DataFrame, *, marker: str, clr: str | None, z: int) -> None:
+        ax.errorbar(
+            sub[x_col],
+            sub["mode_mean_um"],
+            yerr=sub["mode_std_um"],
+            fmt=marker,
+            color=clr,
+            ecolor=clr,
+            capsize=3,
+            capthick=eb_lw,
+            elinewidth=eb_lw,
+            linewidth=eb_lw,
+            markersize=eb_ms,
+            zorder=z,
+        )
+
     for skip_peaky in (False, True):
         df = mode_df[mode_df["skip_peaky"] == skip_peaky].copy()
 
-        use_tcm_poster_style()
-
         # Explicit dataset colors (swap Abe/Morgan).
-        cycle = plt.rcParams.get("axes.prop_cycle").by_key().get(
-            "color", ["C0", "C1"])
+        cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [
+            "C0", "C1"])
         c0 = cycle[0] if len(cycle) > 0 else "C0"
         c1 = cycle[1] if len(cycle) > 1 else "C1"
         ds_color = {"Abe": c0, "Morgan": c1}
@@ -591,7 +607,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
 
         # Simple (non-broken) version
         if not loglog:
-            plt.figure(figsize=(6, 4.6))
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4.6))
+            set_grid(ax, mode="both", on=True)
             # Plot Morgan first, then Abe, so Abe sits on top.
             for ds, marker, z in (("Morgan", "s", 2), ("Abe", "o", 3)):
                 sub = df[df["dataset"].str.lower() == ds.lower()].copy()
@@ -601,32 +618,14 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
 
                 clr = ds_color.get(ds, None)
 
-                base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
-                base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
-                lw = 0.7 * base_lw
-                ms = 0.85 * base_ms
+                _plot_ds(ax, sub, marker=marker, clr=clr, z=z)
 
-                plt.errorbar(
-                    sub[x_col],
-                    sub["mode_mean_um"],
-                    yerr=sub["mode_std_um"],
-                    fmt=marker,
-                    color=clr,
-                    ecolor=clr,
-                    capsize=3,
-                    capthick=lw,
-                    elinewidth=lw,
-                    linewidth=lw,
-                    markersize=ms,
-                    zorder=z,
-                )
-
-            plt.xlabel(x_label)
-            plt.ylabel(r"Mode diameter (μm)")
-            plt.grid(which="major")
-            plt.tight_layout()
-            plt.savefig(out_path, format="pdf", bbox_inches="tight")
-            plt.close()
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(r"Mode diameter (μm)")
+            raise_axis_frame(ax)
+            fig.tight_layout()
+            fig.savefig(out_path, format="pdf", bbox_inches="tight")
+            plt.close(fig)
             continue
 
         # Broken-axis log-log version (x=0 gets its own tiny panel)
@@ -657,11 +656,6 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             sub0 = sub[sub[x_col] <= 0]
             sub1 = sub[sub[x_col] > 0]
 
-            base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
-            base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
-            lw = 0.7 * base_lw
-            ms = 0.85 * base_ms
-
             if not sub1.empty:
                 x1 = sub1[x_col]
                 if x_col == "relaxation_s":
@@ -674,10 +668,10 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                     color=clr,
                     ecolor=clr,
                     capsize=3,
-                    capthick=lw,
-                    elinewidth=lw,
-                    linewidth=lw,
-                    markersize=ms,
+                    capthick=eb_lw,
+                    elinewidth=eb_lw,
+                    linewidth=eb_lw,
+                    markersize=eb_ms,
                     zorder=z,
                 )
 
@@ -693,18 +687,16 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                     color=clr,
                     ecolor=clr,
                     capsize=3,
-                    capthick=lw,
-                    elinewidth=lw,
-                    linewidth=lw,
-                    markersize=ms,
+                    capthick=eb_lw,
+                    elinewidth=eb_lw,
+                    linewidth=eb_lw,
+                    markersize=eb_ms,
                     zorder=z,
                 )
 
         ax1.set_xscale("log")
         ax1.set_yscale("log")
         ax0.set_yscale("log")
-
-        frame_lw = float(plt.rcParams.get("axes.linewidth", 1.0))
 
         ax0.set_xticks([0.0])
         ax0.set_xticklabels(["0"])
@@ -729,7 +721,7 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
         else:
             left_halfwidth = min(0.5, max(min_pos * 0.2, 1e-12))
             ax0.set_xlim(-left_halfwidth, left_halfwidth)
-            ax1.set_xlim(0.91, 150)
+            ax1.set_xlim(0.91, 400)
             ax1.xaxis.set_major_formatter(
                 FuncFormatter(lambda v, pos: f"{v:g}"))
             ax1.xaxis.set_minor_formatter(NullFormatter())
@@ -737,14 +729,11 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             ax0.set_ylim(1.0, 1000)
             x_label_used = "Deborah number"
 
-        # ax0.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
-        # ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
-
         # Grid:
         # - Always keep y-gridlines.
         # - Hide only the specific unwanted x-gridlines (x=0 and x=0.2ms).
-        ax0.grid(which="major", axis="y")
-        ax1.grid(which="major")
+        set_grid(ax0, mode="horizontal", on=True, which="major")
+        set_grid(ax1, mode="both", on=True, which="major")
         if x_col == "relaxation_s":
             # Force grid artists to be realized so get_xdata() is reliable.
             fig.canvas.draw()
@@ -752,14 +741,6 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                 xs = gl.get_xdata()
                 if len(xs) and abs(float(xs[0]) - 0.2) < 1e-6:
                     gl.set_visible(False)
-
-        # Match gridline + tick widths to the spine width.
-        for gl in ax0.get_xgridlines() + ax0.get_ygridlines():
-            gl.set_linewidth(frame_lw)
-        for gl in ax1.get_xgridlines() + ax1.get_ygridlines():
-            gl.set_linewidth(frame_lw)
-        ax0.tick_params(axis="both", which="both", width=frame_lw)
-        ax1.tick_params(axis="x", which="both", width=frame_lw)
 
         ax0.spines["right"].set_visible(False)
         ax1.spines["left"].set_visible(False)
@@ -828,7 +809,7 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             ax0,
             ax1,
             length_points=12.0,
-            inset_points=0.5 * frame_lw,
+            inset_points=0.5 * float(plt.rcParams.get("axes.linewidth", 1.0)),
             angle_deg=65,
         )
         fig.savefig(out_path, format="pdf", bbox_inches="tight")
