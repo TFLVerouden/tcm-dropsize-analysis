@@ -577,6 +577,14 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
         df = mode_df[mode_df["skip_peaky"] == skip_peaky].copy()
 
         use_tcm_poster_style()
+
+        # Explicit dataset colors (swap Abe/Morgan).
+        cycle = plt.rcParams.get("axes.prop_cycle").by_key().get(
+            "color", ["C0", "C1"])
+        c0 = cycle[0] if len(cycle) > 0 else "C0"
+        c1 = cycle[1] if len(cycle) > 1 else "C1"
+        ds_color = {"Abe": c0, "Morgan": c1}
+
         suffix = "skipOn" if skip_peaky else "skipOff"
         ll = "_loglog" if loglog else ""
         out_path = out_plots / f"mode_vs_{x_col}{ll}_{suffix}.pdf"
@@ -591,6 +599,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                 if sub.empty:
                     continue
 
+                clr = ds_color.get(ds, None)
+
                 base_lw = float(plt.rcParams.get("lines.linewidth", 2.0))
                 base_ms = float(plt.rcParams.get("lines.markersize", 6.0))
                 lw = 0.7 * base_lw
@@ -601,6 +611,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                     sub["mode_mean_um"],
                     yerr=sub["mode_std_um"],
                     fmt=marker,
+                    color=clr,
+                    ecolor=clr,
                     capsize=3,
                     capthick=lw,
                     elinewidth=lw,
@@ -640,6 +652,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             if sub.empty:
                 continue
 
+            clr = ds_color.get(ds, None)
+
             sub0 = sub[sub[x_col] <= 0]
             sub1 = sub[sub[x_col] > 0]
 
@@ -657,6 +671,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                     sub1["mode_mean_um"],
                     yerr=sub1["mode_std_um"],
                     fmt=marker,
+                    color=clr,
+                    ecolor=clr,
                     capsize=3,
                     capthick=lw,
                     elinewidth=lw,
@@ -674,6 +690,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                     sub0["mode_mean_um"],
                     yerr=sub0["mode_std_um"],
                     fmt=marker,
+                    color=clr,
+                    ecolor=clr,
                     capsize=3,
                     capthick=lw,
                     elinewidth=lw,
@@ -697,8 +715,8 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
         ax1.xaxis.set_minor_formatter(NullFormatter())
 
         if x_col == "relaxation_s":
-            ax1.set_xlim(0.2, 80.0)
-            ax1.set_xticks([0.2, 1.0, 10.0])
+            ax1.set_xlim(0.21, 80.0)
+            ax1.set_xticks([1.0, 10.0])
             ax1.xaxis.set_major_formatter(
                 FuncFormatter(lambda v, pos: f"{v:g}"))
             ax1.xaxis.set_minor_formatter(NullFormatter())
@@ -711,11 +729,13 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
         else:
             left_halfwidth = min(0.5, max(min_pos * 0.2, 1e-12))
             ax0.set_xlim(-left_halfwidth, left_halfwidth)
-            ax1.set_xlim(min_pos * 0.9, max_pos * 1.1)
+            ax1.set_xlim(0.91, 150)
             ax1.xaxis.set_major_formatter(
                 FuncFormatter(lambda v, pos: f"{v:g}"))
             ax1.xaxis.set_minor_formatter(NullFormatter())
-            x_label_used = x_label
+            ax1.set_ylim(1.0, 1000)
+            ax0.set_ylim(1.0, 1000)
+            x_label_used = "Deborah number"
 
         # ax0.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
         # ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:g}"))
@@ -760,7 +780,9 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
         ax0.set_ylabel(r"Mode diameter (μm)")
 
         fig.tight_layout()
-        fig.subplots_adjust(wspace=0.22)
+        # Broken-axis gap: keep it a touch smaller (adjust here if needed).
+        wspace = 0.1
+        fig.subplots_adjust(wspace=wspace)
 
         from matplotlib.patches import Rectangle
 
@@ -800,7 +822,15 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             va=label.get_verticalalignment(),
         )
 
-        add_broken_xaxis_marks(fig, ax0, ax1, size=0.008)
+        # Nudge the break marks slightly inward so they overlap the spine edges.
+        add_broken_xaxis_marks(
+            fig,
+            ax0,
+            ax1,
+            length_points=12.0,
+            inset_points=0.5 * frame_lw,
+            angle_deg=65,
+        )
         fig.savefig(out_path, format="pdf", bbox_inches="tight")
         plt.close(fig)
 
