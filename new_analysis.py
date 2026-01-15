@@ -117,12 +117,11 @@ def _save_npz(out_path: Path, *, bin_edges_um: np.ndarray, n_percent: np.ndarray
 repo_root = Path(__file__).resolve().parent
 
 metadata_csv = repo_root / "new_analysis" / "metadata.csv"
-out_root = repo_root / "new_analysis" / "data"
-out_abe = out_root / "Abe"
-out_morgan = out_root / "Morgan"
-out_plots = out_root / "plots"
+out_abe = repo_root / "new_analysis" / "data" / "Abe"
+out_morgan = repo_root / "new_analysis" / "data" / "Morgan"
+out_plots = repo_root / "new_analysis" / "plots"
 out_plots_all = out_plots / "all_distributions"
-out_logs = out_root / "logs"
+out_logs = repo_root / "new_analysis" / "data" / "logs"
 
 out_abe.mkdir(parents=True, exist_ok=True)
 out_morgan.mkdir(parents=True, exist_ok=True)
