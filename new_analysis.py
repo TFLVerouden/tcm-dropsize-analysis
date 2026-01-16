@@ -11,7 +11,8 @@ Get directly comparable drop-size distributions from:
 We force both datasets onto the *same* diameter bins (µm) by taking the Spraytec
 bin edges as canonical and binning Morgan samples onto those.
 
-This is intentionally a read-through linear script, not a reusable library.
+We do not plot the probability density function, but the number percentage,
+because a PDF will de-emphasise large-diameter too much. 
 """
 
 from __future__ import annotations
@@ -330,6 +331,9 @@ for _, row in metadata.iterrows():
         # Special series00 example plot (extra output; does not replace normal overlay).
         if series_id == 0:
             fig_ex, ax_ex = plt.subplots(1, 1, figsize=(4, 3.5))
+            # Keep only the plot area (axes patch) white.
+            # The outer figure background is controlled by the active style.
+            ax_ex.set_facecolor("white")
             set_grid(ax_ex, mode="none", on=False)
             set_log_axes(ax_ex, x=True)
 
@@ -620,7 +624,7 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
                 _plot_ds(ax, sub, marker=marker, clr=clr, z=z)
 
             ax.set_xlabel(x_label)
-            ax.set_ylabel(r"Mode diameter (μm)")
+            ax.set_ylabel(r"Droplet diameter (μm)")
             raise_axis_frame(ax)
             fig.tight_layout()
             fig.savefig(out_path, format="pdf", bbox_inches="tight")
@@ -632,7 +636,7 @@ def _plot_mode_vs(x_col: str, *, x_label: str, loglog: bool) -> None:
             1,
             2,
             sharey=True,
-            figsize=(5.4, 4.8),
+            figsize=(5, 4.4),
             gridspec_kw={"width_ratios": [0.35, 4.65]},
         )
 
