@@ -330,7 +330,7 @@ for _, row in metadata.iterrows():
 
         # Special series00 example plot (extra output; does not replace normal overlay).
         if series_id == 0:
-            fig_ex, ax_ex = plt.subplots(1, 1, figsize=(4, 3.5))
+            fig_ex, ax_ex = plt.subplots(1, 1, figsize=(6, 5))
             # Keep only the plot area (axes patch) white.
             # The outer figure background is controlled by the active style.
             ax_ex.set_facecolor("white")
@@ -369,6 +369,7 @@ for _, row in metadata.iterrows():
 
             # Change the xlims to zoomed in view and save again with different name
             ax_ex.set_xlim(4, 200)
+            fig_ex.set_size_inches(4, 3.5)
             fig_ex.tight_layout()
             fig_ex.savefig(
                 out_plots /
